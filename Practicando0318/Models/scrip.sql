@@ -1,9 +1,9 @@
 -- Creación de la base de datos Practica20250311DB
-CREATE DATABASE Practica20250311DB;
+CREATE DATABASE Practica0318DB;
 GO
 
 -- Usar la base de datos Practica20250311DB
-USE Practica20250311DB;
+USE Practica0318DB;
 GO
 
 
