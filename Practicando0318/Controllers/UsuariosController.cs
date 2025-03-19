@@ -1,11 +1,18 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
 using Practicando0318.Models;
+using System.Security.Claims;
+
 
 namespace Practicando0318.Controllers
 {
@@ -53,17 +60,57 @@ namespace Practicando0318.Controllers
         // For more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Create([Bind("Id,Nombre,Password,Email,FechaRegistro,UltimoInicioSesion,Rol,Estatus")] Usuario usuario)
+        public async Task<IActionResult> Create([Bind("Nombre,Password,Email,ConfirmarPassword,Rol")] Usuario usuario)
         {
             if (ModelState.IsValid)
             {
+                usuario.Password = CalcularHashMD5(usuario.Password);
                 _context.Add(usuario);
                 await _context.SaveChangesAsync();
                 return RedirectToAction(nameof(Index));
             }
             return View(usuario);
         }
+        [AllowAnonymous]
+        public async Task<IActionResult> CerrarSession()
+        {
+            // Hola mundo
+            await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            return RedirectToAction("Index", "Home");
+        }
 
+        [AllowAnonymous]
+        public IActionResult Login()
+        {
+            return View();
+        }
+
+        [AllowAnonymous]
+        [HttpPost]
+        public async Task<IActionResult> Login(Usuario usuario)
+        {
+            usuario.Password = CalcularHashMD5(usuario.Password);
+            var usuarioAuth = await _context.
+                Usuarios.
+                FirstOrDefaultAsync(s => s.Email == usuario.Email && s.Password == usuario.Password);
+            if (usuarioAuth != null && usuarioAuth.Id > 0 && usuarioAuth.Email == usuario.Email)
+            {
+                var claims = new[] {
+                    new Claim(ClaimTypes.Name, usuarioAuth.Email),
+                    new Claim("Id", usuarioAuth.Id.ToString()),
+                     new Claim("Nombre", usuarioAuth.Nombre),
+                    new Claim(ClaimTypes.Role, usuarioAuth.Rol)
+                    };
+                var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+                await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
+                return RedirectToAction("Index", "Home");
+            }
+            else
+            {
+                ModelState.AddModelError("", "El email o contraseña estan incorrectos");
+                return View();
+            }
+        }
         // GET: Usuarios/Edit/5
         public async Task<IActionResult> Edit(int? id)
         {
@@ -85,19 +132,25 @@ namespace Practicando0318.Controllers
         // For more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Edit(int id, [Bind("Id,Nombre,Password,Email,FechaRegistro,UltimoInicioSesion,Rol,Estatus")] Usuario usuario)
+        public async Task<IActionResult> Edit(int id, [Bind("Id,Nombre,Email,Estatus,Rol")] Usuario usuario)
         {
             if (id != usuario.Id)
             {
                 return NotFound();
             }
+            var usuarioUpdate = await _context.Usuarios
+               .FirstOrDefaultAsync(m => m.Id == usuario.Id);
 
-            if (ModelState.IsValid)
-            {
+           
                 try
                 {
-                    _context.Update(usuario);
+                    usuarioUpdate.Nombre = usuario.Nombre;
+                    usuarioUpdate.Email = usuario.Email;
+                    usuarioUpdate.Estatus = usuario.Estatus;
+                    usuarioUpdate.Rol = usuario.Rol;
+                    _context.Update(usuarioUpdate);
                     await _context.SaveChangesAsync();
+                    return RedirectToAction(nameof(Index));
                 }
                 catch (DbUpdateConcurrencyException)
                 {
@@ -107,12 +160,9 @@ namespace Practicando0318.Controllers
                     }
                     else
                     {
-                        throw;
+                        return View(usuario);
                     }
                 }
-                return RedirectToAction(nameof(Index));
-            }
-            return View(usuario);
         }
 
         // GET: Usuarios/Delete/5
@@ -151,6 +201,62 @@ namespace Practicando0318.Controllers
         private bool UsuarioExists(int id)
         {
             return _context.Usuarios.Any(e => e.Id == id);
+        }
+        public async Task<IActionResult> Perfil()
+        {
+
+            var idStr = User.FindFirst("Id")?.Value;
+            int id = int.Parse(idStr);
+            var usuario = await _context.Usuarios.FindAsync(id);
+            return View(usuario);
+        }
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Perfil(int id, [Bind("Id,Nombre,Email,Estatus,Rol")] Usuario usuario)
+        {
+            if (id != usuario.Id)
+            {
+                return NotFound();
+            }
+            var usuarioUpdate = await _context.Usuarios
+                 .FirstOrDefaultAsync(m => m.Id == usuario.Id);
+            try
+            {
+                usuarioUpdate.Nombre = usuario.Nombre;
+                usuarioUpdate.Email = usuario.Email;
+                usuarioUpdate.Estatus = usuario.Estatus;
+                usuarioUpdate.Rol = usuario.Rol;
+                _context.Update(usuarioUpdate);
+                await _context.SaveChangesAsync();
+                return RedirectToAction("Index", "Home");
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!UsuarioExists(usuario.Id))
+                {
+                    return NotFound();
+                }
+                else
+                {
+                    return View(usuario);
+                }
+            }
+        }
+
+        private string CalcularHashMD5(string input)
+        {
+            using (MD5 md5 = MD5.Create())
+            {
+                byte[] inputBytes = Encoding.UTF8.GetBytes(input);
+                byte[] hashBytes = md5.ComputeHash(inputBytes);
+
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < hashBytes.Length; i++)
+                {
+                    sb.Append(hashBytes[i].ToString("x2")); // "x2" convierte el byte en una cadena hexadecimal de dos caracteres.
+                }
+                return sb.ToString();
+            }
         }
     }
 }
